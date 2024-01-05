@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	<flow name="data-sync-prc-implFlow" doc:id="f028f95f-5a2c-4ae0-a27a-27adb2300ff0" >
+		<parallel-foreach doc:name="Parallel For Each" doc:id="a97d68fe-328a-4a72-bcda-db9f72301cae" collection="#[payload.sources]" maxConcurrency="${number.threads}">
+			<try doc:name="Try" doc:id="76cc7d54-30f3-41e5-b5ce-13dee216abe5" >
+				<ee:transform doc:name="Transform Message" doc:id="68369c15-3112-4cf2-b68b-afea073aad52">
+			<ee:message>
+			</ee:message>
+			<ee:variables>
+				<ee:set-variable variableName="endpoint"><![CDATA[%dw 2.0
+output application/java
+fun otherDetails(data) = if(data ~= "OpenData") {
+	body: "",
+	headers: {},
+	uriParams: {},
+	queryParams: {}
+}
+else {
+	body: "",
+	headers: {},
+	uriParams: {},
+	queryParams: {}
+}
+---
+{
+	url : p(payload ++ ".url"),
+	method: p(payload ++ ".method"),
+	(otherDetails(payload))
+}]]></ee:set-variable>
+					<ee:set-variable variableName="systemName"><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+				<flow-ref doc:name="common-ImplFlow" doc:id="69427bd4-2652-440c-a31e-8e5555d648a7" name="common-ImplFlow" target="db_response" />
+				<ee:transform doc:name="Transform Message" doc:id="89b86de6-4876-463c-86ae-623918366f77">
+				<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+(payload) : vars.db_response]]></ee:set-payload>
+					<ee:set-attributes><![CDATA[%dw 2.0
+output application/java
+---
+
+httpStatus: if(isEmpty(vars.db_response.status) or (vars.db_response.status ~= 'Error')) 500 else 201]]></ee:set-attributes>
+				</ee:message>
+				<ee:variables>
+				</ee:variables>
+			</ee:transform>
+				<error-handler >
+					<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="f8be15e9-c70c-4e90-8116-3e4ae0f7dcb3" >
+						<ee:transform doc:name="Transform Message" doc:id="6ead198c-3ca7-4a5c-a31e-8698ba66c2f8">
+							<ee:message>
+								<ee:set-payload><![CDATA[output application/json
+---
+(vars.systemName):{
+    "status": "Error",
+    "message": error.description
+  }]]></ee:set-payload>
+								<ee:set-attributes><![CDATA[%dw 2.0
+output application/java
+---
+
+httpStatus: 500]]></ee:set-attributes>
+							</ee:message>
+							<ee:variables />
+						</ee:transform>
+					</on-error-continue>
+				</error-handler>
+			</try>
+		</parallel-foreach>
+		<set-variable value="#[output application/java&#10;---&#10;((((flatten(payload..attributes)).httpStatus ) distinctBy $) orderBy -$)[0]]" doc:name="Set Variable" doc:id="b4c60250-8a7c-4d9f-880d-22be85c6dac2" variableName="httpStatus"/>
+		<set-payload value="#[output application/json --- flatten(payload..payload)]" doc:name="Set Payload" doc:id="84c15166-a0d8-4314-aedd-09928c821020" />
+		<logger level="INFO" doc:name="Logger" doc:id="0f2386c8-c9f7-48e9-8a55-ab2ba30e51c7" message="Final Response - #[payload]"/>
+	</flow>
+</mule>

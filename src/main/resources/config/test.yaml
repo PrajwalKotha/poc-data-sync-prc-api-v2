@@ -1,0 +1,29 @@
+http:
+  host: "0.0.0.0"
+  port: "8081"
+  basepath: "/v1"
+  path: "/*"
+
+mysql_db:
+  host: "localhost"
+  port: "3306"
+  user: "root"
+  password: "Test@123"
+
+OpenData:
+  url: "https://opendata.ecdc.europa.eu/covid19/casedistribution/csv/data.csv"
+  method: "GET"
+  insert:
+    query: "INSERT INTO covid.opendata (`dateRep`,`day`,`month`,`year`,`cases`,`deaths`,`countriesAndTerritories`,`geoId`,`countryterritoryCode`,`popData2019`,`continentExp`,`Cumulative_number_for_14_days_of_COVID-19_cases_per_100000`,`External_Id__c`) VALUES(:dateRep,:day,:month,:year,:cases,:deaths,:countriesAndTerritories,:geoId,:countryterritoryCode,:popData2019,:continentExp,:Cumulative_number_for_14_days_of_COVID,:External_Id__c)"
+
+GitHubContent:
+  url: "https://raw.githubusercontent.com/nytimes/covid-19-data/master/us-counties.csv"
+  method: "GET"
+  insert:
+    query: "INSERT INTO `covid`.`githubcontent` (`date`, `county`, `state`, `fips`, `cases`, `deaths`, `External_Id__c`) VALUES (:date, :county, :state, :fips, :cases, :deaths, :External_Id__c)"
+  
+response:
+  timeOut: "6000000"
+number:
+  threads: "2"
+    

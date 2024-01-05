@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<sub-flow name="common-ImplFlow"
+		doc:id="44c25615-9768-4810-a975-50c4f0ae1719">
+		<http:request method="#[vars.endpoint.method]" doc:name="Third Party Call" doc:id="20c5a93d-530d-4631-89b9-a6c517c58867" url="#[vars.endpoint.url]" outputMimeType="application/csv" responseTimeout="${response.timeOut}">
+			<http:body><![CDATA[#[vars.endpoint.body]]]></http:body>
+			<http:headers><![CDATA[#[vars.endpoint.headers]]]></http:headers>
+			<http:uri-params><![CDATA[#[vars.endpoint.uriParams]]]></http:uri-params>
+			<http:query-params><![CDATA[#[vars.endpoint.queryParams]]]></http:query-params>
+		</http:request>
+		<logger level="INFO" doc:name="Data Size" doc:id="3bcc4819-1816-4cb6-b511-1784501046ad" message="Recieved the data from GET Call #[sizeOf(payload)]" />
+		<choice doc:name="Choice" doc:id="6ae5fd20-5c59-4cce-b107-edf566eb3481" >
+			<when expression="#[vars.systemName ~= 'OpenData']">
+				<ee:transform doc:name="DB insert" doc:id="c537848b-3998-4cb2-88b7-ad6fcd4b15db">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/java
+fun nullCheck(data) = (if(!isEmpty(data)) data else null)
+---
+payload map ({
+	cases: $.cases,
+	countriesAndTerritories: $.countriesAndTerritories,
+	dateRep: ($.dateRep as Date {format: "dd/MM/yyyy"}) as Date {format: "yyyy-MM-dd"},
+	day: $.day,
+	month: $.month,
+	deaths: $.deaths,
+	'Cumulative_number_for_14_days_of_COVID': nullCheck($.'Cumulative_number_for_14_days_of_COVID-19_cases_per_100000'),
+	geoId: $.geoId,
+	countryterritoryCode: $.countryterritoryCode,
+	year: $.year,
+	popData2019: nullCheck($.popData2019),
+	continentExp: $.continentExp,
+	External_Id__c: ($.countryterritoryCode default "") ++ "_" ++ (($.dateRep as Date {format: "dd/MM/yyyy"}) as String {format: "ddMMyyyy"}) 
+})]]></ee:set-payload>
+			</ee:message>
+					<ee:variables >
+					</ee:variables>
+		</ee:transform>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="DB insert" doc:id="b00fe6d3-6002-4db3-9fb9-98414f7f12b5" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+fun nullCheck(data) = (if(!isEmpty(data)) data else null)
+---
+payload map ({
+	cases: $.cases,
+	date: ($.date as Date {format: "yyyy-MM-dd"}) as Date {format: "yyyy-MM-dd"},
+	county: $.county,
+	state: $.state,
+	deaths: $.deaths,
+	fips: $.fips,
+	External_Id__c: ($.county default "") ++ "_" ++ (($.date as Date {format: "yyyy-MM-dd"}) as String {format: "ddMMyyyy"}) ++ "_" ++ ($.state default "")
+})]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<set-variable value='#[%dw 2.0&#10;output application/java&#10;---&#10;p(vars.systemName ++ ".insert.query")]' doc:name="query" doc:id="93bca64d-f7d9-485b-aa61-aa4c3378d73b" variableName="query"/>
+		<logger level="INFO" doc:name="Logger" doc:id="06f45bfe-fac3-490c-941e-99674e51df40" message="query being used - #[vars.query]"/>
+		<try doc:name="Try" doc:id="3bb67a81-af17-4338-929c-b7d9e4174ed7">
+			<db:bulk-insert doc:name="Bulk insert"
+				doc:id="fbc3b3e8-906f-4a44-bd69-c775857569a0"
+				config-ref="Database_Config">
+				<db:sql><![CDATA[#[vars.query]]]></db:sql>
+			</db:bulk-insert>
+			<error-handler>
+				<on-error-continue enableNotifications="true"
+					logException="true" doc:name="On Error Continue"
+					doc:id="166ad623-9fe4-4d29-86d6-ee2a6f6d86b1">
+					<set-payload
+						value="#[output application/json --- Error : error]"
+						doc:name="Set Payload"
+						doc:id="a675dece-1446-427c-9aeb-38dde89a77a9" />
+				</on-error-continue>
+			</error-handler>
+		</try>
+		<set-payload
+			value='#[output application/json&#10;---&#10;if(isEmpty(payload.Error))&#10;{&#10;    "status": "Success",&#10;    "message": "Data inserted successfully for " ++ sizeOf(payload filter ($ ~= 1))&#10;  }&#10;else &#10;{&#10;    status: if(!isEmpty(payload.Error)) "Error" else "Success",&#10;    message: (payload.Error)..message default error.description&#10;}]'
+			doc:name="Set Payload" doc:id="64e2f202-7b25-421a-b551-294599498808" />
+		<logger level="INFO" doc:name="Logger"
+			doc:id="53710fca-49b5-444a-9b44-3007ba63d598"
+			message="Response - #[output application/json --- payload]" />
+	</sub-flow>
+</mule>
